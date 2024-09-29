@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 from homeassistant.components import persistent_notification
 from homeassistant.components.sensor import (
@@ -111,6 +111,9 @@ class EntityProducingCallback:
             self.async_add_entity(new_person), self.hass.loop
         )
 
+        if not event.data["old_state"] or event.data["old_state"].state == "unknown":
+            return
+
         device_id = future.result()
 
         persistent_notification.create(
@@ -137,7 +140,7 @@ async def async_setup_entry(
     else:
         state = hass.states.get(entry.runtime_data.options.source)
 
-        if state:
+        if state and state.state != "unknown":
             sensors = [
                 PersonWeightSensor.from_first_entry(
                     name="Person 1",
@@ -248,6 +251,13 @@ class PersonWeightSensor(MPWSEntity, RestoreSensor):
     _attr_suggested_display_precision = 1
     _attr_icon = "mdi:weight-kilogram"
 
+    class StateAttributes(BaseModel):
+        """Model representing sensor attributes."""
+
+        history: list[SensorHistoryEntry]
+        name: str
+        is_multi_person_weight_sensor: Literal[True] = True
+
     def __init__(self, *, name: str, config_entry: MPWSConfigEntry) -> None:
         """Initialize the sensor class."""
         name_id_part = name.lower().replace(" ", "_")
@@ -304,7 +314,10 @@ class PersonWeightSensor(MPWSEntity, RestoreSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return the state attributes of the sensor."""
-        return {"history": [entry.dict() for entry in self.history], "name": self.name}
+        return self.StateAttributes(
+            history=self.history,
+            name=self.name,
+        ).dict()
 
     @property
     def native_value(self) -> Decimal | None:

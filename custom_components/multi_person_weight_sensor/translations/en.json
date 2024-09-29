@@ -14,5 +14,19 @@
             }
         },
         "error": {}
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "name": "Name",
+                    "source": "Weight measurements source",
+                    "weight_difference_threshold": "Difference threshold"
+                },
+                "data_description": {
+                    "weight_difference_threshold": "When a new measurement differs from the last by this amount or more, the helper will consider it a new person.\nChanging this will only affect future measurements."
+                }
+            }
+        }
     }
 }
