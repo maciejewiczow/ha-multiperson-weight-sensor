@@ -9,4 +9,13 @@ homeassistant:
 logger:
   default: info
   logs:
-    custom_components.integration_blueprint: debug
+    custom_components.multi_person_weight_sensor: debug
+
+template:
+  - sensor:
+    - name: "Test input weight sensor"
+      unit_of_measurement: kg
+      state: 80
+      state_class: measurement
+      device_class: weight
+

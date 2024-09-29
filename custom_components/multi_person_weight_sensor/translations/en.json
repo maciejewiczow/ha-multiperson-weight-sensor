@@ -1,0 +1,18 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "description": "Specify the entity that will be the source of the weight measurements and the threshold that will be used to differentiate betweeen persons.",
+                "data": {
+                    "name": "Name",
+                    "source": "Weight measurements source",
+                    "weight_difference_threshold": "Difference threshold"
+                },
+                "data_description": {
+                    "weight_difference_threshold": "When a new measurement differs from the last by this amount or more, the helper will consider it a new person"
+                }
+            }
+        },
+        "error": {}
+    }
+}
