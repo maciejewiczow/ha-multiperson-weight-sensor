@@ -8,7 +8,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 if TYPE_CHECKING:
-    from custom_components.multi_person_weight_sensor.data import MPWSConfigEntry
+    from .data import MPWSConfigEntry
 
 
 class MPWSEntity(Entity):
@@ -19,6 +19,7 @@ class MPWSEntity(Entity):
         super().__init__()
         self._attr_unique_id = unique_id
         self._attr_device_info = DeviceInfo(
+            name=config_entry.runtime_data.options.name,
             identifiers={
                 (
                     config_entry.domain,

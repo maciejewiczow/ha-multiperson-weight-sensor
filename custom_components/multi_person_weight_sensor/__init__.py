@@ -31,7 +31,7 @@ async def async_setup_entry(
     entry: MPWSConfigEntry,
 ) -> bool:
     """Set up this integration using UI."""
-    LOGGER.debug(entry.options)
+    LOGGER.debug(entry.options, stack_info=True)
 
     opts = MPWSConfigEntryOptions(**entry.options)
 
@@ -41,7 +41,7 @@ async def async_setup_entry(
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
 

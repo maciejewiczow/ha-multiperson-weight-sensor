@@ -11,6 +11,7 @@
   "issue_tracker": "https://github.com/maciejewiczow/ha-multiperson-weight-sensor/issues",
   "version": "0.0.1",
   "requirements": [
+    "pydantic",
     "varname==0.13.3"
   ]
 }

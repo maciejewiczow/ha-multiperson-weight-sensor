@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from pydantic import BaseModel
@@ -11,8 +11,9 @@ from pydantic import BaseModel
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from homeassistant.core import HomeAssistant
     from homeassistant.helpers.storage import Store
+
+type MPWSConfigEntry = ConfigEntry[MPWSRuntimeData]
 
 
 class SensorHistoryEntry(BaseModel):
@@ -54,11 +55,3 @@ class MPWSRuntimeData:
     options: MPWSConfigEntryOptions
     storage: Store
     unsub_to_state_updates: Callable[[], None] | None = None
-
-
-class MPWSConfigEntry(ConfigEntry[MPWSRuntimeData]):
-    """The integration's config entry."""
-
-    @override
-    async def async_remove(self, hass: HomeAssistant) -> None:
-        await super().async_remove(hass)

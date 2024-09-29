@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Self
 
 from homeassistant.components import persistent_notification
@@ -15,6 +15,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.components.sensor.const import SensorDeviceClass, SensorStateClass
 from homeassistant.core import Event, EventStateChangedData, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from pydantic import BaseModel, ValidationError
 
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
 class EntityProducingCallback:
     """Callback with access to async_add_entities."""
 
-    async_add_entity: Callable[[PersonWeightSensor], Coroutine]
+    async_add_entity: Callable[[PersonWeightSensor], Coroutine[None, None, str | None]]
     sensors: list[PersonWeightSensor]
     threshold: Decimal
     hass: HomeAssistant
@@ -47,7 +48,9 @@ class EntityProducingCallback:
 
     def __init__(
         self,
-        async_add_entity: Callable[[PersonWeightSensor], Coroutine],
+        async_add_entity: Callable[
+            [PersonWeightSensor], Coroutine[None, None, str | None]
+        ],
         sensors: list[PersonWeightSensor],
         threshold: Decimal,
         hass: HomeAssistant,
@@ -63,7 +66,7 @@ class EntityProducingCallback:
     @callback
     def __call__(self, event: Event[EventStateChangedData]) -> None:
         """Handle the source sensor state update."""
-        LOGGER.info(
+        LOGGER.debug(
             f"Source sensor state updated from {event.data['old_state']} to {event.data['new_state']}"  # noqa: E501
         )
 
@@ -73,7 +76,13 @@ class EntityProducingCallback:
 
         LOGGER.debug(f"state: {event.data['new_state'].state}")
 
-        new_value = Decimal(event.data["new_state"].state)
+        try:
+            new_value = Decimal(event.data["new_state"].state)
+        except InvalidOperation:
+            LOGGER.warning(
+                f"Non-decimal state for {event.data['entity_id']}: {event.data["new_state"].state}"  # noqa: E501
+            )
+            return
 
         for sensor in self.sensors:
             if not sensor.native_value:
@@ -98,14 +107,16 @@ class EntityProducingCallback:
             config_entry=self.entry,
         )
 
-        asyncio.run_coroutine_threadsafe(
+        future = asyncio.run_coroutine_threadsafe(
             self.async_add_entity(new_person), self.hass.loop
         )
-        self.sensors.append(new_person)
+
+        device_id = future.result()
+
         persistent_notification.create(
             self.hass,
             title="A new person has weighted themselves",
-            message=f"Configure the new sensor created [here](/developer-tools/state?entity_id={new_person.entity_id})",  # noqa: E501
+            message=f'Configure the "{new_person.name}" sensor created [here](/config/devices/device/{device_id})',  # noqa: E501
         )
 
 
@@ -118,18 +129,36 @@ async def async_setup_entry(
     raw_data = await entry.runtime_data.storage.async_load()
     data = MPWSStoredData(persons=[]) if not raw_data else MPWSStoredData(**raw_data)
 
-    sensors = [
-        PersonWeightSensor(name=person.name, config_entry=entry)
-        for person in data.persons
-    ]
+    if len(data.persons) > 0:
+        sensors = [
+            PersonWeightSensor(name=person.name, config_entry=entry)
+            for person in data.persons
+        ]
+    else:
+        state = hass.states.get(entry.runtime_data.options.source)
+
+        if state:
+            sensors = [
+                PersonWeightSensor.from_first_entry(
+                    name="Person 1",
+                    config_entry=entry,
+                    first_entry=Decimal(state.state),
+                )
+            ]
+        else:
+            sensors = []
 
     async_add_entities(sensors)
 
-    async def add_entity(e: PersonWeightSensor) -> None:
+    async def add_entity(e: PersonWeightSensor) -> str | None:
         async_add_entities([e])
         sensors.append(e)
         data.persons.append(MPWSPersonData(name=e.name))
         await entry.runtime_data.storage.async_save(data.dict())
+        entity_registry = er.async_get(hass)
+        entity = entity_registry.async_get(e.entity_id)
+
+        return entity.device_id if entity else None
 
     entry.runtime_data.unsub_to_state_updates = async_track_state_change_event(
         hass,
@@ -162,7 +191,7 @@ class PersonWeightSensorExtraStoredData(SensorExtraStoredData):
         history: list[SensorHistoryEntry]
         name: str
 
-    data: _Data
+    _data: _Data
 
     def __init__(
         self,
@@ -176,15 +205,15 @@ class PersonWeightSensorExtraStoredData(SensorExtraStoredData):
             native_value=native_value,
             native_unit_of_measurement=native_unit_of_measurement,
         )
-        self.data = self._Data(history=history, name=name)
+        self._data = self._Data(history=history, name=name)
 
     def as_dict(self) -> dict[str, Any]:
         """Serialize the extra data into a dict."""
         data = super().as_dict()
 
-        data.update(self.data.dict())
+        data.update(self._data.dict())
 
-        LOGGER.debug(data)
+        LOGGER.debug(data, stack_info=True)
 
         return data
 
@@ -197,8 +226,16 @@ class PersonWeightSensorExtraStoredData(SensorExtraStoredData):
             LOGGER.warning(
                 f"Extra data for person weight sensor could not be restored: {e}"
             )
-            LOGGER.debug(restored)
+            LOGGER.debug(restored, stack_info=True)
             return None
+
+    @property
+    def history(self):  # noqa: ANN201, D102
+        return self._data.history
+
+    @property
+    def name(self):  # noqa: ANN201, D102
+        return self._data.name
 
 
 class PersonWeightSensor(MPWSEntity, RestoreSensor):
@@ -208,11 +245,13 @@ class PersonWeightSensor(MPWSEntity, RestoreSensor):
     name: str
 
     _attr_native_unit_of_measurement = "kg"
-    _attr_suggested_display_precision = 2
+    _attr_suggested_display_precision = 1
+    _attr_icon = "mdi:weight-kilogram"
 
     def __init__(self, *, name: str, config_entry: MPWSConfigEntry) -> None:
         """Initialize the sensor class."""
-        sensor_id = f"mpws_{config_entry.runtime_data.options.id_safe_name}_{name.lower().replace(' ', '_')}_weight"  # noqa: E501
+        name_id_part = name.lower().replace(" ", "_")
+        sensor_id = f"mpws_{config_entry.runtime_data.options.id_safe_name}_{name_id_part}_weight"  # noqa: E501
 
         super().__init__(unique_id=sensor_id, config_entry=config_entry)
 
@@ -253,6 +292,14 @@ class PersonWeightSensor(MPWSEntity, RestoreSensor):
 
     async def _update_ha_state(self) -> None:
         self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        """Handle entity being added to HA."""
+        await super().async_added_to_hass()
+
+        if (last_sensor_data := await self.async_get_last_sensor_data()) is not None:
+            self.name = last_sensor_data.name
+            self.history = last_sensor_data.history
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

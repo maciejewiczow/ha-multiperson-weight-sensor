@@ -11,7 +11,7 @@ from homeassistant.helpers import selector as sel
 from varname.core import nameof
 
 from .const import DOMAIN
-from .data import MPWSConfigEntryOptions
+from .data import MPWSConfigEntry, MPWSConfigEntryOptions
 
 
 class ConfigurationFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -97,8 +97,8 @@ class ConfigurationFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Integration options flow."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
+    def __init__(self, config_entry: MPWSConfigEntry) -> None:
+        """Initialize options flow instance."""
         self.config_entry = config_entry
 
     async def async_step_init(
